@@ -61,12 +61,12 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)
-    let rec eval theState theExpr = 
+    let rec eval theState theExpr = (
         match theExpr with
         | Const theConst -> theConst
         | Var theVariable -> theState theVariable
         | Binop (theOp, leftOp, rightOp) ->
-            processBinop theOp (eval theState leftOp) (eval theState rightOp);;
+            processBinop theOp (eval theState leftOp) (eval theState rightOp));;
 
   end
                     
@@ -97,9 +97,9 @@ module Stmt =
             | h::t -> (Expr.update x h theState, t, theOutput))
         | Write e ->(theState, theInput, theOutput @ [Expr.eval theState e])
         | Assign (x, e) -> (Expr.update x (Expr.eval theState e) theState, theInput, theOutput)
-        | Seq (s1, s2) ->
+        | Seq (s1, s2) -> (
             let eval (theState, theInput, theOutput) s1 = cc in
-            eval cc s2;;
+            eval cc s2);;
                                                          
   end
 
