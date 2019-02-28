@@ -34,6 +34,26 @@ module Expr =
     *)
     let update x v s = fun y -> if x = y then v else s y
 
+    let boolToInt b = if b then 1 else 0;;
+
+    let intToBool i = i != 0;;
+    
+    let processBinop theOp leftOp rightOp =
+        match theOp with
+        | "+" -> leftOp + rightOp
+        | "-" -> leftOp - rightOp
+        | "*" -> leftOp * rightOp
+        | "/" -> leftOp / rightOp
+        | "%" -> leftOp mod rightOp
+        | "==" -> boolToInt (leftOp == rightOp)
+        | "!=" -> boolToInt (leftOp != rightOp)
+        | "<" -> boolToInt (leftOp < rightOp)
+        | "<=" -> boolToInt (leftOp <= rightOp)
+        | ">" -> boolToInt (leftOp > rightOp)
+        | ">=" -> boolToInt (leftOp >= rightOp)
+        | "&&" -> boolToInt (intToBool leftOp && intToBool rightOp)
+        | "!!" -> boolToInt (intToBool leftOp || intToBool rightOp);;
+    
     (* Expression evaluator
 
           val eval : state -> t -> int
@@ -41,7 +61,12 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)
-    let eval _ = failwith "Not implemented yet"
+    let rec eval theState theExpr = 
+        match theExpr with
+        | Const theConst -> theConst
+        | Var theVariable -> theState theVariable
+        | Binop (theOp, leftOp, rightOp) ->
+            processBinop theOp (eval theState leftOp) (eval theState rightOp);;
 
   end
                     
