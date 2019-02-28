@@ -95,11 +95,11 @@ module Stmt =
         | Read x -> (
             match theInput with
             | h::t -> (Expr.update x h theState, t, theOutput))
-        | Write e ->(theState, theInput, theOutput @ [Expr.eval theState e])
+        | Write e -> (theState, theInput, theOutput @ [Expr.eval theState e])
         | Assign (x, e) -> (Expr.update x (Expr.eval theState e) theState, theInput, theOutput)
-        | Seq (s1, s2) -> (
-            let eval (theState, theInput, theOutput) s1 = cc in
-            eval cc s2);;
+        | Seq (s1, s2) ->
+            let cc = eval (theState, theInput, theOutput) s1 in
+            eval cc s2;;
                                                          
   end
 

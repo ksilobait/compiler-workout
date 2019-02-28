@@ -54,8 +54,7 @@ let rec compileExpr theExpression =
     match theExpression with
     | Syntax.Expr.Var x -> [LD x]
     | Syntax.Expr.Const n -> [CONST n]
-    | Syntax.Expr.Binop (theOp leftOp rightOp) ->
-        (compileExpr leftOp) @ (compileExpr rightOp) @ [BINOP theOp];;
+    | Syntax.Expr.Binop (theOp leftOp rightOp) -> (compileExpr leftOp) @ (compileExpr rightOp) @ [BINOP theOp];;
 
 (* Stack machine compiler
 
