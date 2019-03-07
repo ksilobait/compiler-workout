@@ -18,13 +18,30 @@ type prg = insn list
  *)
 type config = int list * Stmt.config
 
+let evalStep (theStack, (theState, theInput, theOutput)) theProgram =
+    match theProgram with
+    | BINOP op -> (
+        match theStack with
+        | y :: x :: t -> ([Language.Expr.processBinop op x y] @ t, (theState, theInput, theOutput)))
+    | CONST n -> ([n] @ theStack, (theState, theInput, theOutput))
+    | READ -> (
+        match theInput with
+        | h :: t -> ([h] @ theStack, (theState, t, theOutput)))
+    | WRITE -> (
+        match theStack with
+        | h :: t -> (t, (theState, theInput, theOutput @ [h])))
+    | LD x -> ([theState x] @ theStack, (theState, theInput, theOutput))
+    | ST x -> (
+        match theStack with
+        | h :: t -> (t, (Language.Expr.update x h theState, theInput, theOutput)));;
+
 (* Stack machine interpreter
 
      val eval : config -> prg -> config
 
    Takes a configuration and a program, and returns a configuration as a result
  *)                         
-let eval _ = failwith "Not yet implemented"
+let rec eval theConfig theProgram = List.fold_left evalStep theConfig theProgram
 
 (* Top-level evaluation
 
@@ -34,6 +51,13 @@ let eval _ = failwith "Not yet implemented"
 *)
 let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in o
 
+let rec compileExpr theExpression =
+    match theExpression with
+    | Language.Expr.Var x -> [LD x]
+    | Language.Expr.Const n -> [CONST n]
+    | Language.Expr.Binop (theOp, leftOp, rightOp) ->
+        (compileExpr leftOp) @ (compileExpr rightOp) @ [BINOP theOp];;
+
 (* Stack machine compiler
 
      val compile : Language.Stmt.t -> prg
@@ -41,4 +65,9 @@ let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in 
    Takes a program in the source language and returns an equivalent program for the
    stack machine
  *)
-let compile _ = failwith "Not yet implemented"
+let rec compile theProgram =
+    match theProgram with
+    | Language.Stmt.Assign (x, e) -> (compileExpr e) @ [ST x]
+    | Language.Stmt.Read x -> [READ; ST x]
+    | Language.Stmt.Write e -> (compileExpr e) @ [WRITE]
+    | Language.Stmt.Seq (s1, s2) -> (compile s1) @ (compile s2);;
