@@ -18,13 +18,30 @@ type prg = insn list
  *)
 type config = int list * Stmt.config
 
+let evalStep (theStack, (theState, theInput, theOutput)) theProgram =
+    match theProgram with
+    | BINOP op -> (
+        match theStack with
+        | y :: x :: t -> ([Language.Expr.processBinop op x y] @ t, (theState, theInput, theOutput)))
+    | CONST n -> ([n] @ theStack, (theState, theInput, theOutput))
+    | READ -> (
+        match theInput with
+        | h :: t -> ([h] @ theStack, (theState, t, theOutput)))
+    | WRITE -> (
+        match theStack with
+        | h :: t -> (t, (theState, theInput, theOutput @ [h])))
+    | LD x -> ([theState x] @ theStack, (theState, theInput, theOutput))
+    | ST x -> (
+        match theStack with
+        | h :: t -> (t, (Language.Expr.update x h theState, theInput, theOutput)));;
+
 (* Stack machine interpreter
 
      val eval : config -> prg -> config
 
    Takes a configuration and a program, and returns a configuration as a result
 *)                         
-let rec eval conf prog = failwith "Not yet implemented"
+let rec eval theConfig theProgram = List.fold_left evalStep theConfig theProgram
 
 (* Top-level evaluation
 
@@ -32,7 +49,7 @@ let rec eval conf prog = failwith "Not yet implemented"
 
    Takes a program, an input stream, and returns an output stream this program calculates
 *)
-let run p i = let (_, (_, _, o)) = eval ([], (Expr.empty, i, [])) p in o
+let run p i = let (_, (_, _, o)) = eval ([], (Language.Expr.empty, i, [])) p in o
 
 (* Stack machine compiler
 
