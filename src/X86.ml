@@ -81,24 +81,21 @@ open SM
 
 let rec processBinop theOp env =
     let rightOp, leftOp, env = env#pop2 in
+    let s, env = env#allocate in
     match theOp with
-    | "+" -> env#push leftOp, [Binop ("+", rightOp, leftOp)]
-    | "-" -> env#push leftOp, [Binop ("-", rightOp, leftOp)]
-    | "*" -> env#push leftOp, [Binop ("*", rightOp, leftOp)]
-    | "/" ->
-        let s, env = env#allocate in
-        env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (eax, s)]
-    | "%" ->
-        let s, env = env#allocate in
-        env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (edx, s)]
-    | "<=" -> env#push leftOp, [Mov (L 0, eax); Binop ("cmp", rightOp, leftOp); Set ("le", "%al"); Mov (eax, leftOp)]
-    | "<" ->  env#push leftOp, [Mov (L 0, eax); Binop ("cmp", rightOp, leftOp); Set ("l", "%al"); Mov (eax, leftOp)]
-    | ">=" -> env#push leftOp, [Mov (L 0, eax); Binop ("cmp", rightOp, leftOp); Set ("ge", "%al"); Mov (eax, leftOp)]
-    | ">" ->  env#push leftOp, [Mov (L 0, eax); Binop ("cmp", rightOp, leftOp); Set ("g", "%al"); Mov (eax, leftOp)]
-    | "==" -> env#push leftOp, [Mov (L 0, eax); Binop ("cmp", rightOp, leftOp); Set ("e", "%al"); Mov (eax, leftOp)]
-    | "!=" -> env#push leftOp, [Mov (L 0, eax); Binop ("cmp", rightOp, leftOp); Set ("ne", "%al"); Mov (eax, leftOp)]
-    | "&&" -> env#push leftOp, [Mov (L 0, eax); Mov (L 0, edx); Binop ("cmp", L 0, leftOp); Set ("ne", "%al"); Binop ("cmp", L 0, rightOp); Set ("ne", "%dl"); Binop ("&&", eax, edx); Mov (edx, leftOp)]
-    | "!!" -> env#push leftOp, [Mov (L 0, eax); Mov (leftOp, edx); Binop ("!!", rightOp, edx); Set ("nz", "%al"); Mov (eax, leftOp)];;
+    | "+" -> env, [Mov (leftOp, eax); Binop ("+", rightOp, eax); Mov (eax, s)]
+    | "-" -> env, [Mov (leftOp, eax); Binop ("-", rightOp, eax); Mov (eax, s)]
+    | "*" -> env, [Mov (leftOp, eax); Binop ("*", rightOp, eax); Mov (eax, s)]
+    | "/" -> env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (eax, s)]
+    | "%" -> env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (edx, s)]
+    | "<=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("le", "%al"); Mov (eax, s)]
+    | "<" ->  env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("l", "%al"); Mov (eax, s)]
+    | ">=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("ge", "%al"); Mov (eax, s)]
+    | ">" ->  env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("g", "%al"); Mov (eax, s)]
+    | "==" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("e", "%al"); Mov (eax, s)]
+    | "!=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("ne", "%al"); Mov (eax, s)]
+    | "&&" -> env, [Mov (L 0, eax); Mov (L 0, edx); Binop ("cmp", L 0, leftOp); Set ("ne", "%al"); Binop ("cmp", L 0, rightOp); Set ("ne", "%dl"); Binop ("&&", eax, edx); Mov (edx, s)]
+    | "!!" -> env, [Mov (L 0, eax); Mov (leftOp, edx); Binop ("!!", rightOp, edx); Set ("nz", "%al"); Mov (eax, s)];;
 
 
 (* Symbolic stack machine evaluator
@@ -124,10 +121,10 @@ let rec compile env theProgram =
             env, [Call "Lread"; Mov (eax, s)]
         | LD x ->
             let s, env = (env#global x)#allocate in
-            env, [Mov (M ("global_" ^ x), s)]
+            env, [Mov (M ("global_" ^ x), eax); Mov (eax, s)]
         | ST x ->
             let s, env = (env#global x)#pop in
-            env, [Mov (s, M ("global_" ^ x))]
+            env, [Mov (s, eax); Mov (eax, M ("global_" ^ x))]
         | BINOP theOp -> processBinop theOp env
         | LABEL l -> env, [Label l]
         | JMP l -> env, [Jmp l]
