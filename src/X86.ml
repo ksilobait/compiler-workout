@@ -79,6 +79,25 @@ let show instr =
 (* Opening stack machine to use instructions without fully qualified names *)
 open SM
 
+let rec processBinop theOp env =
+    let rightOp, leftOp, env = env#pop2 in
+    let s, env = env#allocate in
+    match theOp with
+    | "+" -> env, [Mov (leftOp, eax); Binop ("+", rightOp, eax); Mov (eax, s)]
+    | "-" -> env, [Mov (leftOp, eax); Binop ("-", rightOp, eax); Mov (eax, s)]
+    | "*" -> env, [Mov (leftOp, eax); Binop ("*", rightOp, eax); Mov (eax, s)]
+    | "/" -> env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (eax, s)]
+    | "%" -> env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (edx, s)]
+    | "<=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("le", "%al"); Mov (eax, s)]
+    | "<" ->  env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("l", "%al"); Mov (eax, s)]
+    | ">=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("ge", "%al"); Mov (eax, s)]
+    | ">" ->  env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("g", "%al"); Mov (eax, s)]
+    | "==" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("e", "%al"); Mov (eax, s)]
+    | "!=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("ne", "%al"); Mov (eax, s)]
+    | "&&" -> env, [Mov (L 0, eax); Mov (L 0, edx); Binop ("cmp", L 0, leftOp); Set ("ne", "%al"); Binop ("cmp", L 0, rightOp); Set ("ne", "%dl"); Binop ("&&", eax, edx); Mov (edx, s)]
+    | "!!" -> env, [Mov (L 0, eax); Mov (leftOp, edx); Binop ("!!", rightOp, edx); Set ("nz", "%al"); Mov (eax, s)];;
+
+
 (* Symbolic stack machine evaluator
 
      compile : env -> prg -> env * instr list
@@ -86,7 +105,36 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile _ = failwith "Not Implemented Yet"
+let rec compile env theProgram =
+    match theProgram with
+    | [] -> (env, [])
+    | instr :: code' -> let env, asm =
+        match instr with
+        | CONST n ->
+            let s, env = env#allocate in
+            env, [Mov (L n, s)]
+        | WRITE -> 
+            let s, env = env#pop in
+            env, [Push s; Call "Lwrite"; Pop eax]
+        | READ ->
+            let s, env = env#allocate in
+            env, [Call "Lread"; Mov (eax, s)]
+        | LD x ->
+            let s, env = (env#global x)#allocate in
+            env, [Mov (M ("global_" ^ x), eax); Mov (eax, s)]
+        | ST x ->
+            let s, env = (env#global x)#pop in
+            env, [Mov (s, eax); Mov (eax, M ("global_" ^ x))]
+        | BINOP theOp -> processBinop theOp env
+        | LABEL l -> env, [Label l]
+        | JMP l -> env, [Jmp l]
+        | CJMP (znz, l) ->
+            let s, env = env#pop in
+            env, [Binop ("cmp", L 0, s); CJmp (znz, l)]
+        | _ -> failwith "Not yet supported"
+    in
+    let env, asm' = compile env code' in
+    env, asm @ asm';;
 
 (* A set of strings *)           
 module S = Set.Make (String)

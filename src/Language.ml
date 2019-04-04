@@ -150,12 +150,82 @@ module Stmt =
 
        which returns a list of formal parameters and a body for given definition
     *)
-    let rec eval _ = failwith "Not Implemented Yet"
-                                
+    let rec eval env (theState, theInput, theOutput) theStatement = 
+        match theStatement with
+        | Read x -> (
+            match theInput with
+            | h::t -> (State.update x h theState, t, theOutput))
+        | Write e ->(theState, theInput, theOutput @ [Expr.eval theState e])
+        | Assign (x, e) -> (State.update x (Expr.eval theState e) theState, theInput, theOutput)
+        | Seq (s1, s2) ->
+            let cc = eval env (theState, theInput, theOutput) s1 in
+                eval env cc s2
+        | Skip -> (theState, theInput, theOutput)
+        | If (e, s1, s2) ->
+            let result = Expr.eval theState e in
+            if result = 0 then
+                eval env (theState, theInput, theOutput) s2
+            else
+                eval env (theState, theInput, theOutput) s1
+        | While (e, s) ->
+            let result = Expr.eval theState e in
+            if result = 0 then
+                (theState, theInput, theOutput)
+            else
+                let (theState', theInput', theOutput') = eval env (theState, theInput, theOutput) s in
+                eval env (theState', theInput', theOutput') theStatement
+        | Repeat (s, e) ->
+            let (theState', theInput', theOutput') = eval env (theState, theInput, theOutput) s in
+            let result = Expr.eval theState' e in
+            if result = 0 then
+                eval env (theState', theInput', theOutput') theStatement
+            else
+                (theState', theInput', theOutput')
+        | Call (f, e) ->
+            let (a, l, s) = env#definition f in
+            let st1 = State.push_scope theState (a @ l) in
+            let st2 = List.combine a (List.map (Expr.eval theState) e) in
+            let st3 = List.fold_left (fun theState (f, v) -> State.update f v theState) st1 st2 in
+            let (theState', theInput', theOutput') = eval env (st3, theInput, theOutput) s in
+            (State.drop_scope theState' theState, theInput', theOutput');;
+    
+    
     (* Statement parser *)
     ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
-    )
+        stmt: "read" "(" x:IDENT ")" {Read x}
+            | "write" "(" theExpr:!(Expr.parse) ")" {Write theExpr}
+            | x:IDENT ":=" theExpr:!(Expr.parse) {Assign (x, theExpr)}
+            | "if" theExpr: !(Expr.parse) "then"
+                then_body: !(parse)
+                elif_body: (%"elif" !(Expr.parse) %"then" !(parse))*
+                els: (%"else" !(parse))?
+                "fi"
+                {
+                    let else_body =
+                        match els with
+                        | Some x -> x
+                        | _ -> Skip
+                    in
+                    let else_body' = List.fold_right (fun (theExpr', then') els' -> If (theExpr', then', els')) elif_body else_body in
+                    If (theExpr, then_body, else_body')
+                }
+            | "while" theExpr:!(Expr.parse) "do" body:!(parse) "od" {While (theExpr, body)}
+            | "for" init:!(parse) "," theExpr:!(Expr.parse) "," step:!(parse) "do" body:!(parse) "od"
+                {
+                    Seq (init, While (theExpr, Seq (body, step)))
+                }
+            | "repeat" body:!(parse) "until" theExpr:!(Expr.parse)
+                { 
+                    Repeat (body, theExpr)
+                }
+            | "skip" {Skip}
+            | f:IDENT "(" a:(!(Expr.parse))* ")"
+                {
+                    Call (f, a)
+                };
+        
+        parse: h:stmt ";" t:parse {Seq (h, t)} | stmt
+    );;
       
   end
 
@@ -167,7 +237,15 @@ module Definition =
     type t = string * (string list * string list * Stmt.t)
 
     ostap (                                      
-      parse: empty {failwith "Not yet implemented"}
+        parse: "fun" f:IDENT "(" args:(IDENT)* ")" locals:(%"local" (IDENT)*)? "{" body:!(Stmt.parse) "}"
+        {
+            let locals =
+                match locals with
+                | Some x -> x
+                | _ -> []
+            in
+            f, (args, locals, body)
+        }
     )
 
   end
