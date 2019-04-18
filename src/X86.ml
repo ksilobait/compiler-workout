@@ -90,24 +90,91 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile env code =
-  let suffix = function
-  | "<"  -> "l"
-  | "<=" -> "le"
-  | "==" -> "e"
-  | "!=" -> "ne"
-  | ">=" -> "ge"
-  | ">"  -> "g"
-  | _    -> failwith "unknown operator"	
-  in
-  let rec compile' env scode = failwith "Not implemented" in
-  compile' env code
+let rec processBinop theOp env =
+    let rightOp, leftOp, env = env#pop2 in
+    let s, env = env#allocate in
+    match theOp with
+    | "+" -> env, [Mov (leftOp, eax); Binop ("+", rightOp, eax); Mov (eax, s)]
+    | "-" -> env, [Mov (leftOp, eax); Binop ("-", rightOp, eax); Mov (eax, s)]
+    | "*" -> env, [Mov (leftOp, eax); Binop ("*", rightOp, eax); Mov (eax, s)]
+    | "/" -> env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (eax, s)]
+    | "%" -> env, [Mov (leftOp, eax); Cltd; IDiv rightOp; Mov (edx, s)]
+    | "<=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("le", "%al"); Mov (eax, s)]
+    | "<" ->  env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("l", "%al"); Mov (eax, s)]
+    | ">=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("ge", "%al"); Mov (eax, s)]
+    | ">" ->  env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("g", "%al"); Mov (eax, s)]
+    | "==" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("e", "%al"); Mov (eax, s)]
+    | "!=" -> env, [Mov (leftOp, edx); Mov (L 0, eax); Binop ("cmp", rightOp, edx); Set ("ne", "%al"); Mov (eax, s)]
+    | "&&" -> env, [Mov (L 0, eax); Mov (L 0, edx); Binop ("cmp", L 0, leftOp); Set ("ne", "%al"); Binop ("cmp", L 0, rightOp); Set ("ne", "%dl"); Binop ("&&", eax, edx); Mov (edx, s)]
+    | "!!" -> env, [Mov (L 0, eax); Mov (leftOp, edx); Binop ("!!", rightOp, edx); Set ("nz", "%al"); Mov (eax, s)];;
+
+let rec compile env theProgram =
+    match theProgram with
+    | [] -> (env, [])
+    | instr :: code' -> let env, asm =
+        match instr with
+        | BINOP theOp -> processBinop theOp env
+        | CONST n ->
+            let s, env = env#allocate in
+            env, [Mov (L n, s)]
+        | STRING _ -> failwith "String is not supported"
+        | LD x ->
+            let s, env = (env#global x)#allocate in
+            env, [Mov (env#loc x, eax); Mov (eax, s)]
+        | ST x ->
+            let s, env = (env#global x)#pop in
+            env, [Mov (s, eax); Mov (eax, env#loc x)]
+        | STA (_, _) -> failwith "STA is not supported"
+        | LABEL l -> env, [Label l]
+        | JMP l -> env, [Jmp l]
+        | CJMP (znz, l) ->
+            let s, env = env#pop in
+            env, [Binop ("cmp", L 0, s); CJmp (znz, l)]
+        | CALL (l, num_args, flag) ->
+            let push_regs, pop_regs = List.split @@ List.map (fun reg -> (Push reg, Pop reg)) env#live_registers in
+            let rec pushArgs env num_args = (
+                match num_args with
+                | 0 -> env, []
+                | n ->
+                    let x, env' = env#pop in
+                    let env'', ar = pushArgs env' (n - 1) in
+                    env'', ar @ [Push x])
+            in
+            let env', compiledArgs = pushArgs env num_args in
+            let env'', res = 
+                if flag then
+                    let x, env'' = env'#allocate in
+                    env'', [Mov (eax, x)]
+                else
+                    env', []
+            in
+            if l = "read" then
+                env'', push_regs @ compiledArgs @ [Call "Lread"; Binop ("+", L (num_args * word_size), esp)] @ pop_regs @ res
+            else
+                env'', push_regs @ compiledArgs @ [Call "Lwrite"; Binop ("+", L (num_args * word_size), esp)] @ pop_regs @ res
+        | BEGIN (name, args, locals) ->
+            let env' = env#enter name args locals in
+            env', [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env'#lsize), esp)]
+        | END -> env, [Label env#epilogue; Mov (ebp, esp); Pop ebp; Ret; Meta (Printf.sprintf "\t.set %s, %d" env#lsize (env#allocated * word_size))]
+        | RET flag ->
+            if flag then
+                let a, env' = env#pop in
+                env', [Mov (a, eax); Jmp env'#epilogue]
+            else
+                env, [Jmp env#epilogue]
+        | _ -> failwith "Not yet supported"
+    in
+    let env, asm' = compile env code' in
+    env, asm @ asm';;
+
 
 (* A set of strings *)           
 module S = Set.Make (String)
 
 (* Environment implementation *)
-let make_assoc l = List.combine l (List.init (List.length l) (fun x -> x))
+let rec init_impl n = if n < 0 then [] else n :: init_impl (n - 1)
+let list_init n = List.rev (init_impl (n - 1))
+let make_assoc l = List.combine l (list_init (List.length l))
                      
 class env =
   object (self)
